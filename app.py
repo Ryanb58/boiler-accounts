@@ -1,9 +1,11 @@
 from concurrent import futures
 import os
 import time
-import sqlite3
+import random
 
 import grpc
+import sqlite3
+from google.protobuf import empty_pb2
 
 # import your gRPC bindings here:
 from protos import accounts_pb2
@@ -16,7 +18,7 @@ _ONE_DAY_IN_SECONDS = 60 * 60 * 24
 # Using a dictionary for now.
 USERS = [
     {
-        "id": 1,
+        "id": "1",
         "name": "Administrator",
         "email": "admin@example.com",
         "password": "password"
@@ -25,7 +27,25 @@ USERS = [
 
 # Helper Functions:
 
-def getUserByEmail(email, password):
+def getUsersIndex(pk):
+    for index, user in enumerate(USERS):
+        if int(user['id']) == int(pk):
+            return index
+
+
+def getUserByID(pk):
+    user = list(filter(lambda user: int(user['id']) == int(pk), USERS))
+    if len(user) == 1:
+        return user[0]
+    return False
+
+def getUserByEmail(email):
+    user = list(filter(lambda user: user['email'] == email, USERS))
+    if len(user) == 1:
+        return user[0]
+    return False
+
+def getUserByEmailAndPassword(email, password):
     user = list(filter(lambda user: user['email'] == email and user['password'] == password, USERS))
     if len(user) == 1:
         return user[0]
@@ -40,7 +60,7 @@ class AccountServicer(accounts_pb2_grpc.AccountServiceServicer):
         return self.dbconnection.cursor()
 
     def AuthenticateByEmail(self, request, context):
-        user = getUserByEmail(request.email, request.password)
+        user = getUserByEmailAndPassword(request.email, request.password)
         if user:
             print("Authenticated: {}".format(request.email))
             return accounts_pb2.Account(
@@ -48,6 +68,79 @@ class AccountServicer(accounts_pb2_grpc.AccountServiceServicer):
                 name=str(user['name']),
                 email=str(user['email']))
         context.set_code(grpc.StatusCode.UNAUTHENTICATED)
+
+    def List(self, request, context):
+        serialized_accounts = []
+        for user in USERS:
+            serialized_accounts.append(
+                accounts_pb2.Account(
+                    id=str(user['id']),
+                    name=str(user['name']),
+                    email=str(user['email'])
+                )
+            )
+
+        return accounts_pb2.ListAccountsResponse(
+            accounts=serialized_accounts
+        )
+        print("List Action")
+
+    def Create(self, request, context):
+        # Check to see if they already exist:
+        if getUserByEmail(request.account.email):
+            context.set_code(grpc.StatusCode.ALREADY_EXISTS)
+            return
+
+        USERS.append(
+            {
+                "id": random.randint(2, 100),
+                "name": request.account.name,
+                "email": request.account.email,
+                "password": request.password
+            }
+        )
+        user = getUserByEmail(request.account.email)
+        print("User Created: {}".format(user['email']))
+        return accounts_pb2.Account(
+                id=str(user['id']),
+                name=str(user['name']),
+                email=str(user['email']))
+
+    def Update(self, request, context):
+        # Check to see if they already exist:
+        user = getUserByID(request.id)
+        if not user:
+            context.set_code(grpc.StatusCode.NOT_FOUND)
+            return
+
+        user["name"] = request.account.name
+        user["email"] = request.account.email
+        user["password"] = request.password
+
+        user = getUserByEmail(request.account.email)
+        print("User Updated: {}".format(user['id']))
+        return accounts_pb2.Account(
+                id=str(user['id']),
+                name=str(user['name']),
+                email=str(user['email']))
+
+    def Delete(self, request, context):
+        # Check to see if they already exist:
+        index = getUsersIndex(request.id)
+        if int(USERS[index]['id']) != int(request.id):
+            context.set_code(grpc.StatusCode.NOT_FOUND)
+            return
+
+        del USERS[index]
+
+        user = getUserByID(request.id)
+
+        if user:
+            context.set_code(grpc.StatusCode.UNKNOWN)
+            return
+
+        print("Deleted user {}".format(request.id))
+        return empty_pb2.Empty()
 
 
 def serve():
