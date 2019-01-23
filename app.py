@@ -31,6 +31,7 @@ def getUsersIndex(pk):
     for index, user in enumerate(USERS):
         if int(user['id']) == int(pk):
             return index
+    return -1
 
 
 def getUserByID(pk):
@@ -127,6 +128,10 @@ class AccountServicer(accounts_pb2_grpc.AccountServiceServicer):
     def Delete(self, request, context):
         # Check to see if they already exist:
         index = getUsersIndex(request.id)
+        if index == -1:
+            context.set_code(grpc.StatusCode.UNKNOWN)
+            return
+
         if int(USERS[index]['id']) != int(request.id):
             context.set_code(grpc.StatusCode.NOT_FOUND)
             return
