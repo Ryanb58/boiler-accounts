@@ -1,3 +1,7 @@
+# Help the system find the proto library:
+import sys
+sys.path.append('./protos')
+
 from concurrent import futures
 import os
 import time
@@ -56,10 +60,6 @@ def getUserByEmailAndPassword(email, password):
 class AccountServicer(accounts_pb2_grpc.AccountServiceServicer):
 # class AccountServicer(object):
 
-    def dbConnect(self):
-        self.dbconnection = sqlite3.connect("app.sqlite", check_same_thread=False)
-        return self.dbconnection.cursor()
-
     def AuthenticateByEmail(self, request, context):
         user = getUserByEmailAndPassword(request.email, request.password)
         if user:
@@ -69,6 +69,15 @@ class AccountServicer(accounts_pb2_grpc.AccountServiceServicer):
                 name=str(user['name']),
                 email=str(user['email']))
         context.set_code(grpc.StatusCode.UNAUTHENTICATED)
+
+    def GetByID(self, request, context):
+        account = getUserByID(request.id)
+        if account:
+            return accounts_pb2.Account(
+                id=str(account['id']),
+                name=str(account['name']),
+                email=str(account['email']))
+        context.set_code(grpc.StatusCode.NOT_FOUND)
 
     def List(self, request, context):
         serialized_accounts = []
@@ -84,7 +93,6 @@ class AccountServicer(accounts_pb2_grpc.AccountServiceServicer):
         return accounts_pb2.ListAccountsResponse(
             accounts=serialized_accounts
         )
-        print("List Action")
 
     def Create(self, request, context):
         # Check to see if they already exist:
@@ -113,10 +121,12 @@ class AccountServicer(accounts_pb2_grpc.AccountServiceServicer):
         if not user:
             context.set_code(grpc.StatusCode.NOT_FOUND)
             return
-
-        user["name"] = request.account.name
-        user["email"] = request.account.email
-        user["password"] = request.password
+        if request.account.name:
+            user["name"] = request.account.name
+        if request.account.email:
+            user["email"] = request.account.email
+        if request.password:
+            user["password"] = request.password
 
         user = getUserByEmail(request.account.email)
         print("User Updated: {}".format(user['id']))
